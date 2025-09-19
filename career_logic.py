@@ -4,7 +4,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import ChatPromptTemplate
 
 # Load API key from Streamlit secrets
-GOOGLE_API_KEY = st.secrets["google_api_key"]
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 
 # Initialize the LLM
 llm = ChatGoogleGenerativeAI(
@@ -40,3 +40,4 @@ def generate_roadmap(career_choice: str) -> str:
     chain = prompt | llm
     response = chain.invoke({"career_choice": career_choice})
     return response.content
+
