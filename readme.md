@@ -39,3 +39,11 @@ An interactive **Streamlit application** that provides **personalized career gui
 
 ## 📂 Project Structure
 
+career_advisor/
+│── app.py              # Main Streamlit app (UI + chatbot integration)
+│── career_logic.py     # Core logic for career suggestions & roadmaps
+│── chatbot.py          # Chatbot initialization with context
+│── .env                # Stores your GOOGLE_API_KEY
+│── README.md           # Project documentation
+
+
