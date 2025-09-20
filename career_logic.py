@@ -1,26 +1,34 @@
 # career_logic.py
-import streamlit as st
+
+from typing import List, Dict
+from pydantic import BaseModel, Field, ValidationError
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.output_parsers import PydanticOutputParser
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Union
 import json
+import toml
+import os
 
 
-# Load API key from Streamlit secrets
-GOOGLE_API_KEY = st.secrets["API_KEYS"]["GOOGLE_API_KEY"]
+# -----------------------------
+# Load API Key from .toml
+# -----------------------------
+config = toml.load("config.toml")
+os.environ["GOOGLE_API_KEY"] = config["API_KEYS"]["GOOGLE_API_KEY"]
 
 
-# ---------------- Pydantic Models ---------------- #
+# -----------------------------
+# Pydantic Models
+# -----------------------------
+class SalaryRange(BaseModel):
+    min: int = Field(..., description="Minimum salary in local currency or USD")
+    max: int = Field(..., description="Maximum salary in local currency or USD")
+
+
 class Career(BaseModel):
-    title: str = Field(..., description="The career title")
-    description: str = Field(..., description="A short description of the career")
-    salary: Dict[str, Union[str, Dict[str, Union[int, float]]]] = Field(
-        default_factory=dict,
-        description=(
-            "Estimated salaries by region. Can be a string like '5-8 LPA' "
-            "or a dict with min/max (e.g., {'min': 60000, 'max': 120000})"
-        )
+    title: str = Field(..., description="The job title")
+    description: str = Field(..., description="Brief description of the role")
+    salary: Dict[str, SalaryRange] = Field(
+        ..., description="Salary ranges by region (India, USA, Europe, UK, Remote)"
     )
 
 
@@ -28,73 +36,57 @@ class CareerList(BaseModel):
     careers: List[Career]
 
 
-# ---------------- LLM Setup ---------------- #
-llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
-    google_api_key=GOOGLE_API_KEY,
-)
+# -----------------------------
+# LLM + Parser
+# -----------------------------
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 parser = PydanticOutputParser(pydantic_object=CareerList)
 
 
-# ---------------- Helpers ---------------- #
-def safe_parse_salary(salary_field: Any) -> Dict[str, str]:
-    """Normalize salary into {region: 'min-max'} format."""
-    if isinstance(salary_field, dict):
-        normalized = {}
-        for region, val in salary_field.items():
-            if isinstance(val, dict) and "min" in val and "max" in val:
-                normalized[region] = f"{val['min']} - {val['max']}"
-            else:
-                normalized[region] = str(val)
-        return normalized
-    if isinstance(salary_field, str):
-        try:
-            return json.loads(salary_field.replace("'", '"'))
-        except Exception:
-            return {}
-    return {}
+def suggest_careers(profile: str) -> CareerList:
+    """
+    Query the Gemini LLM to suggest careers for a given profile.
+    Always enforces the format: {"careers": [...]}
+    """
 
+    query = f"""
+    You are an expert career advisor.
+    Suggest 3 career paths for this user profile: {profile}.
 
-# ---------------- Core Functions ---------------- #
-def suggest_careers(profile: Dict[str, Any]) -> Dict[str, Any]:
-    query = (
-        f"Suggest 3 careers for someone with profile: {profile}. "
-        f"Return JSON strictly in the format: {{'careers': [{{'title':.., 'description':.., 'salary':..}}]}}. "
-        f"The 'salary' must be a dictionary with regions as keys "
-        f"(India, USA, Europe, UK, Remote). Each region value can be either "
-        f"a string (like '5-8 LPA') or an object with 'min' and 'max'."
-    )
+    Return the result ONLY in this JSON format:
+    {{
+      "careers": [
+        {{
+          "title": "Job Title",
+          "description": "Role description",
+          "salary": {{
+            "India": {{"min": 400000, "max": 1500000}},
+            "USA": {{"min": 60000, "max": 120000}},
+            "Europe": {{"min": 40000, "max": 90000}},
+            "UK": {{"min": 35000, "max": 75000}},
+            "Remote": {{"min": 50000, "max": 100000}}
+          }}
+        }}
+      ]
+    }}
+    """
 
-    raw = llm.invoke(query).content.strip()
+    response = llm.invoke(query)
 
-    # Try to parse JSON safely
     try:
-        data = json.loads(raw)
-    except Exception:
-        # Sometimes LLM outputs list directly
+        # Try structured parsing first
+        return parser.invoke(response)
+
+    except ValidationError:
+        # Fallback: try loading raw JSON and fixing structure
         try:
-            data = json.loads(raw.replace("'", '"'))
-        except Exception:
-            raise ValueError(f"Could not parse LLM response: {raw[:200]}")
+            raw = json.loads(response.content)
 
-    # Auto-wrap if bare list
-    if isinstance(data, list):
-        data = {"careers": data}
+            # If Gemini returned just a list, wrap it
+            if isinstance(raw, list):
+                raw = {"careers": raw}
 
-    # Parse into Pydantic model
-    parsed = CareerList(**data)
+            return CareerList(**raw)
 
-    # Normalize salaries
-    for career in parsed.careers:
-        career.salary = safe_parse_salary(career.salary)
-
-    return parsed.dict()
-
-
-def generate_roadmap(career_name: str, region: str) -> List[str]:
-    query = (
-        f"Generate a step-by-step roadmap for becoming a {career_name} in {region}. "
-        f"List 5-7 key steps as bullet points."
-    )
-    result = llm.invoke(query)
-    return [line.strip("-• ") for line in result.content.split("\n") if line.strip()]
+        except Exception as inner_e:
+            raise ValueError(f"Could not parse LLM response: {response.content}") from inner_e
