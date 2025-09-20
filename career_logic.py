@@ -1,19 +1,14 @@
-# career_logic.py
-
-from typing import List, Dict
-from pydantic import BaseModel, Field, ValidationError
+import streamlit as st
+import os
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.output_parsers import PydanticOutputParser
-import json
-import toml
-import os
-
+from pydantic import BaseModel, Field
+from typing import List, Dict
 
 # -----------------------------
-# Load API Key from .toml
+# Load API Key from secrets.toml
 # -----------------------------
-config = toml.load("config.toml")
-os.environ["GOOGLE_API_KEY"] = config["API_KEYS"]["GOOGLE_API_KEY"]
+os.environ["GOOGLE_API_KEY"] = st.secrets["API_KEYS"]["GOOGLE_API_KEY"]
 
 
 # -----------------------------
@@ -25,11 +20,9 @@ class SalaryRange(BaseModel):
 
 
 class Career(BaseModel):
-    title: str = Field(..., description="The job title")
-    description: str = Field(..., description="Brief description of the role")
-    salary: Dict[str, SalaryRange] = Field(
-        ..., description="Salary ranges by region (India, USA, Europe, UK, Remote)"
-    )
+    title: str
+    description: str
+    salary: Dict[str, SalaryRange]
 
 
 class CareerList(BaseModel):
@@ -45,8 +38,7 @@ parser = PydanticOutputParser(pydantic_object=CareerList)
 
 def suggest_careers(profile: str) -> CareerList:
     """
-    Query the Gemini LLM to suggest careers for a given profile.
-    Always enforces the format: {"careers": [...]}
+    Query Gemini to suggest careers for a given profile.
     """
 
     query = f"""
@@ -74,19 +66,14 @@ def suggest_careers(profile: str) -> CareerList:
     response = llm.invoke(query)
 
     try:
-        # Try structured parsing first
         return parser.invoke(response)
 
-    except ValidationError:
-        # Fallback: try loading raw JSON and fixing structure
+    except Exception:
+        import json
         try:
             raw = json.loads(response.content)
-
-            # If Gemini returned just a list, wrap it
             if isinstance(raw, list):
                 raw = {"careers": raw}
-
             return CareerList(**raw)
-
-        except Exception as inner_e:
-            raise ValueError(f"Could not parse LLM response: {response.content}") from inner_e
+        except Exception as e:
+            raise ValueError(f"Could not parse Gemini response: {response.content}") from e
