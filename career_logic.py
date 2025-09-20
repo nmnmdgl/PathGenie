@@ -1,3 +1,4 @@
+# career_logic.py
 import streamlit as st
 import os
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -9,7 +10,6 @@ from typing import List, Dict
 # Load API Key from secrets.toml
 # -----------------------------
 os.environ["GOOGLE_API_KEY"] = st.secrets["API_KEYS"]["GOOGLE_API_KEY"]
-
 
 # -----------------------------
 # Pydantic Models
@@ -36,11 +36,13 @@ llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 parser = PydanticOutputParser(pydantic_object=CareerList)
 
 
-def suggest_careers(profile: str) -> CareerList:
+# -----------------------------
+# Functions
+# -----------------------------
+def suggest_careers(profile: dict) -> CareerList:
     """
     Query Gemini to suggest careers for a given profile.
     """
-
     query = f"""
     You are an expert career advisor.
     Suggest 3 career paths for this user profile: {profile}.
@@ -67,7 +69,6 @@ def suggest_careers(profile: str) -> CareerList:
 
     try:
         return parser.invoke(response)
-
     except Exception:
         import json
         try:
@@ -77,3 +78,18 @@ def suggest_careers(profile: str) -> CareerList:
             return CareerList(**raw)
         except Exception as e:
             raise ValueError(f"Could not parse Gemini response: {response.content}") from e
+
+
+def generate_roadmap(career_title: str, region: str) -> str:
+    """
+    Generate a step-by-step career roadmap for the given career and region.
+    """
+    query = f"""
+    You are an expert career coach.
+    Create a clear roadmap for becoming a **{career_title}** in {region}.
+    Include skills to learn, projects to build, certifications, and networking tips.
+    Use bullet points and keep it concise but actionable.
+    """
+
+    response = llm.invoke(query)
+    return response.content.strip()
