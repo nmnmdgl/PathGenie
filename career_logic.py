@@ -1,15 +1,14 @@
 # career_logic.py
 import streamlit as st
-import os
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from typing import List, Dict
 
 # -----------------------------
-# Load API Key from secrets.toml
+# Load API Key from Streamlit secrets
 # -----------------------------
-os.environ["GOOGLE_API_KEY"] = st.secrets["API_KEYS"]["GOOGLE_API_KEY"]
+GOOGLE_API_KEY = st.secrets["API_KEYS"]["GOOGLE_API_KEY"]
 
 # -----------------------------
 # Pydantic Models
@@ -18,30 +17,29 @@ class SalaryRange(BaseModel):
     min: int = Field(..., description="Minimum salary in local currency or USD")
     max: int = Field(..., description="Maximum salary in local currency or USD")
 
-
 class Career(BaseModel):
     title: str
     description: str
     salary: Dict[str, SalaryRange]
 
-
 class CareerList(BaseModel):
     careers: List[Career]
 
-
 # -----------------------------
-# LLM + Parser
+# Initialize LLM
 # -----------------------------
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
-parser = PydanticOutputParser(pydantic_object=CareerList)
 
+# Parser for structured output
+parser = PydanticOutputParser(pydantic_object=CareerList)
 
 # -----------------------------
 # Functions
 # -----------------------------
-def suggest_careers(profile: dict) -> CareerList:
+def suggest_careers(profile: dict) -> dict:
     """
     Query Gemini to suggest careers for a given profile.
+    Returns a dict suitable for Streamlit.
     """
     query = f"""
     You are an expert career advisor.
@@ -68,14 +66,15 @@ def suggest_careers(profile: dict) -> CareerList:
     response = llm.invoke(query)
 
     try:
-        return parser.invoke(response)
+        parsed = parser.invoke(response)
+        return parsed.model_dump()  # convert Pydantic -> dict
     except Exception:
         import json
         try:
             raw = json.loads(response.content)
             if isinstance(raw, list):
                 raw = {"careers": raw}
-            return CareerList(**raw)
+            return raw
         except Exception as e:
             raise ValueError(f"Could not parse Gemini response: {response.content}") from e
 
