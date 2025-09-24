@@ -26,9 +26,13 @@ class CareerList(BaseModel):
     careers: List[Career]
 
 # -----------------------------
-# Initialize LLM
+# Initialize LLM (✅ pass API key)
 # -----------------------------
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-1.5-flash",
+    temperature=0,
+    google_api_key=GOOGLE_API_KEY,  # ✅ Explicitly provide key
+)
 
 # Parser for structured output
 parser = PydanticOutputParser(pydantic_object=CareerList)
