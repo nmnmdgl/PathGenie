@@ -4,6 +4,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from typing import List, Dict
+import json
 
 # -----------------------------
 # Load API Key from Streamlit secrets
@@ -26,12 +27,12 @@ class CareerList(BaseModel):
     careers: List[Career]
 
 # -----------------------------
-# Initialize LLM (✅ pass API key)
+# Initialize LLM (✅ API key from st.secrets)
 # -----------------------------
 llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
+    model="models/gemini-1.5-flash",   # ✅ Correct model path
     temperature=0,
-    google_api_key=GOOGLE_API_KEY,  # ✅ Explicitly provide key
+    google_api_key=GOOGLE_API_KEY
 )
 
 # Parser for structured output
@@ -71,9 +72,8 @@ def suggest_careers(profile: dict) -> dict:
 
     try:
         parsed = parser.invoke(response)
-        return parsed.model_dump()  # convert Pydantic -> dict
+        return parsed.model_dump()
     except Exception:
-        import json
         try:
             raw = json.loads(response.content)
             if isinstance(raw, list):
